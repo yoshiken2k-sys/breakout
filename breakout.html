@@ -48,8 +48,15 @@
       TRIPLE:    { label: '3×', color: '#b44aff', desc: '3つ弾' },
       CATCH:     { label: 'C',  color: '#00d4ff', desc: 'キャッチ' },
       PENETRATE: { label: 'P',  color: '#ff5722', desc: '貫通'   },
+      EXPAND:    { label: 'W+', color: '#4caf50', desc: 'パドル拡大' },
+      SHRINK:    { label: 'W-', color: '#e91e8c', desc: 'パドル縮小' },
     };
     const ITEM_KEYS = Object.keys(ITEM_TYPES);
+
+    const PADDLE_W_NORMAL = 80;
+    const PADDLE_W_LARGE  = 130;
+    const PADDLE_W_SMALL  = 40;
+    const PADDLE_ITEM_DURATION = 600; // フレーム数（約10秒）
 
     // ---- 状態 ----
     let blocks, balls, bullets, items;
@@ -61,9 +68,10 @@
 
     // パワーアップ状態
     const power = {
-      catch: false,      // キャッチ中
-      penetrate: false,  // 貫通中
-      penetrateTimer: 0,
+      catch: false,
+      penetrate: false,  penetrateTimer: 0,
+      expand: false,     expandTimer: 0,
+      shrink: false,     shrinkTimer: 0,
     };
 
     const keys = {};
@@ -92,12 +100,19 @@
       balls[0].catchOffsetX = 0;
     }
 
+    function resetPower() {
+      power.catch = false;
+      power.penetrate = false; power.penetrateTimer = 0;
+      power.expand = false;    power.expandTimer = 0;
+      power.shrink = false;    power.shrinkTimer = 0;
+      paddle.w = PADDLE_W_NORMAL;
+    }
+
     function restart() {
       score = 0; lives = 3; gameState = 'playing';
       paddle.x = 200;
       bullets = []; items = [];
-      power.catch = false;
-      power.penetrate = false; power.penetrateTimer = 0;
+      resetPower();
       initBlocks();
       resetBalls();
     }
@@ -115,6 +130,13 @@
 
     // ---- パワーアップ適用 ----
     function applyItem(type) {
+      // 既存のパワーアップを全て解除
+      power.catch = false;
+      power.penetrate = false; power.penetrateTimer = 0;
+      power.expand = false;    power.expandTimer = 0;
+      power.shrink = false;    power.shrinkTimer = 0;
+      paddle.w = PADDLE_W_NORMAL;
+
       if (type === 'TRIPLE') {
         const newBalls = [];
         balls.forEach(b => {
@@ -132,7 +154,14 @@
         power.catch = true;
       } else if (type === 'PENETRATE') {
         power.penetrate = true;
-        power.penetrateTimer = 600; // フレーム数
+        power.penetrateTimer = PADDLE_ITEM_DURATION;
+      } else if (type === 'EXPAND') {
+        power.expand = true; power.expandTimer = PADDLE_ITEM_DURATION;
+        paddle.w = PADDLE_W_LARGE;
+        paddle.x = Math.min(paddle.x, W - paddle.w);
+      } else if (type === 'SHRINK') {
+        power.shrink = true; power.shrinkTimer = PADDLE_ITEM_DURATION;
+        paddle.w = PADDLE_W_SMALL;
       }
     }
 
@@ -195,13 +224,18 @@
 
       // アクティブパワーアップ表示
       const activePowers = [];
-      if (power.catch) activePowers.push({ label: 'CATCH', color: '#00d4ff' });
+      if (power.catch)     activePowers.push({ label: 'CATCH', color: '#00d4ff' });
       if (power.penetrate) activePowers.push({ label: `PENETRATE ${Math.ceil(power.penetrateTimer/60)}s`, color: '#ff5722' });
+      if (power.expand)    activePowers.push({ label: `W+ ${Math.ceil(power.expandTimer/60)}s`, color: '#4caf50' });
+      if (power.shrink)    activePowers.push({ label: `W- ${Math.ceil(power.shrinkTimer/60)}s`, color: '#e91e8c' });
+      const totalW = activePowers.length * 90;
       activePowers.forEach((p, i) => {
         ctx.fillStyle = p.color;
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText(p.label, W / 2 - 60 + i * 110, 22);
+        ctx.textAlign = 'center';
+        ctx.fillText(p.label, W / 2 - totalW / 2 + i * 90 + 45, 22);
       });
+      ctx.textAlign = 'left';
 
       // ゲームオーバー / クリア
       if (gameState !== 'playing') {
@@ -226,11 +260,10 @@
       if (keys['ArrowLeft'] && paddle.x > 0) paddle.x -= paddle.speed;
       if (keys['ArrowRight'] && paddle.x + paddle.w < W) paddle.x += paddle.speed;
 
-      // 貫通タイマー
-      if (power.penetrate) {
-        power.penetrateTimer--;
-        if (power.penetrateTimer <= 0) power.penetrate = false;
-      }
+      // タイマー管理
+      if (power.penetrate) { power.penetrateTimer--; if (power.penetrateTimer <= 0) power.penetrate = false; }
+      if (power.expand)    { power.expandTimer--;    if (power.expandTimer <= 0)    { power.expand = false; paddle.w = PADDLE_W_NORMAL; } }
+      if (power.shrink)    { power.shrinkTimer--;    if (power.shrinkTimer <= 0)    { power.shrink = false; paddle.w = PADDLE_W_NORMAL; } }
 
       // ---- ボール更新 ----
       balls = balls.filter(ball => {
@@ -298,8 +331,7 @@
       if (balls.length === 0) {
         lives--;
         if (lives <= 0) { gameState = 'gameover'; return; }
-        power.catch = false;
-        power.penetrate = false; power.penetrateTimer = 0;
+        resetPower();
         resetBalls();
         return;
       }
